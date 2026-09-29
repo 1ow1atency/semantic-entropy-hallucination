@@ -1,6 +1,8 @@
-"""Uncertainty scores over a set of sampled answers: semantic entropy and two baselines."""
+"""Uncertainty scores over a set of sampled answers: semantic entropy and baselines."""
 
 import math
+import re
+import string
 from collections import Counter
 from collections.abc import Hashable, Sequence
 
@@ -25,6 +27,18 @@ def semantic_entropy(cluster_ids: list[int]) -> float:
 def naive_entropy(answers: list[str]) -> float:
     """Entropy over the raw answer strings, so "Paris" and "Paris." count as different answers."""
     return _entropy(answers)
+
+
+def normalize_answer(text: str) -> str:
+    """Lowercase, strip punctuation and the articles "the", "a", "an", and collapse whitespace."""
+    text = text.lower().translate(str.maketrans("", "", string.punctuation))
+    text = re.sub(r"\b(the|a|an)\b", " ", text)
+    return " ".join(text.split())
+
+
+def normalized_string_entropy(answers: list[str]) -> float:
+    """Entropy over normalized answer strings, so "Paris", "paris." and "The Paris" count as one answer."""
+    return _entropy([normalize_answer(a) for a in answers])
 
 
 def agreement_rate(cluster_ids: list[int]) -> float:

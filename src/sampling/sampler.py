@@ -1,10 +1,8 @@
 """Sample multiple answers to the same question from an LLM via the Groq API."""
 
 import logging
-import os
 
-from dotenv import load_dotenv
-from groq import Groq
+from src.groq_chat import RateLimitExhausted, chat
 
 MODEL = "openai/gpt-oss-20b"
 SYSTEM_PROMPT = (
@@ -15,46 +13,22 @@ MAX_ATTEMPTS = 2  # one initial try plus one retry
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-_client = None
-
-
-def _get_client() -> Groq:
-    global _client
-    if _client is None:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
-        _client = Groq(api_key=api_key)
-    return _client
-
-
-def _query_once(question: str, temperature: float) -> str:
-    response = _get_client().chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": question},
-        ],
-        temperature=temperature,
-        reasoning_effort="low",
-        reasoning_format="hidden",  # return only the final answer, not the reasoning trace
-    )
-    return response.choices[0].message.content.strip()
-
 
 def sample_answers(question: str, n_samples: int = 10, temperature: float = 1.0) -> list[str]:
     """Ask the same question n_samples times and return the raw text answers.
 
     Each request is retried once on failure. A sample that fails twice is logged
     and skipped, so the returned list may have fewer than n_samples entries.
+    Rate limits are waited out in chat(); RateLimitExhausted is raised to the caller.
     """
     answers = []
     for i in range(n_samples):
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                answers.append(_query_once(question, temperature))
+                answers.append(chat(MODEL, SYSTEM_PROMPT, question, temperature))
                 break
+            except RateLimitExhausted:
+                raise
             except Exception as e:
                 if attempt < MAX_ATTEMPTS:
                     logger.warning("Sample %d failed (%s); retrying.", i + 1, e)

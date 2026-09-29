@@ -1,7 +1,13 @@
 import math
 import unittest
 
-from src.entropy.semantic_entropy import agreement_rate, naive_entropy, semantic_entropy
+from src.entropy.semantic_entropy import (
+    agreement_rate,
+    naive_entropy,
+    normalize_answer,
+    normalized_string_entropy,
+    semantic_entropy,
+)
 
 
 def ids_from_sizes(sizes: list[int]) -> list[int]:
@@ -45,6 +51,24 @@ class NaiveEntropyTest(unittest.TestCase):
     def test_empty_raises(self):
         with self.assertRaises(ValueError):
             naive_entropy([])
+
+
+class NormalizedStringEntropyTest(unittest.TestCase):
+    def test_surface_variants_collapse(self):
+        self.assertAlmostEqual(normalized_string_entropy(["Paris", "paris.", "The Paris"]), 0.0)
+
+    def test_different_answers_stay_distinct(self):
+        self.assertAlmostEqual(normalized_string_entropy(["Paris", "the paris", "Lyon", "Lyon!"]), math.log(2))
+
+    def test_articles_only_removed_as_whole_words(self):
+        self.assertEqual(normalize_answer("  The   Anthem of  a Nation. "), "anthem of nation")
+
+    def test_single_sample(self):
+        self.assertEqual(normalized_string_entropy(["Paris"]), 0.0)
+
+    def test_empty_raises(self):
+        with self.assertRaises(ValueError):
+            normalized_string_entropy([])
 
 
 class AgreementRateTest(unittest.TestCase):

@@ -1,0 +1,8 @@
+{
+  "n_total": 25,
+  "n_not_attempted_excluded": 0,
+  "n_analyzed": 25,
+  "accuracy_judge": 0.48,
+  "accuracy_alias_match": 0.48,
+  "n_bootstrap": 1000
+}

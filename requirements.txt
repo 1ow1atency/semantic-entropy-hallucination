@@ -2,3 +2,6 @@ groq
 python-dotenv
 torch
 transformers
+datasets
+scikit-learn
+matplotlib
