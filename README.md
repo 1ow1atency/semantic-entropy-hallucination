@@ -49,6 +49,8 @@ cp .env.example .env
 
 `.env` is listed in `.gitignore`, so your key stays out of version control.
 
+Answers are sampled from `openai/gpt-oss-20b` via Groq, since `llama-3.1-8b-instant` wasn't available on this account.
+
 ## Status
 
 This is the initial scaffold. The pipeline (sampling, clustering, entropy, evaluation) is not implemented yet.
