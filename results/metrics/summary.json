@@ -1,8 +1,8 @@
 {
-  "n_total": 25,
-  "n_not_attempted_excluded": 0,
-  "n_analyzed": 25,
-  "accuracy_judge": 0.48,
-  "accuracy_alias_match": 0.48,
+  "n_total": 200,
+  "n_not_attempted_excluded": 2,
+  "n_analyzed": 198,
+  "accuracy_judge": 0.5757575757575758,
+  "accuracy_alias_match": 0.5555555555555556,
   "n_bootstrap": 1000
 }
