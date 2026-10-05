@@ -1,6 +1,7 @@
 """Sample multiple answers to the same question from an LLM via the Groq API."""
 
 import logging
+from dataclasses import dataclass
 
 from src.groq_chat import RateLimitExhausted, chat
 
@@ -14,8 +15,20 @@ MAX_ATTEMPTS = 2  # one initial try plus one retry
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class Sample:
+    text: str
+    finish_reason: str | None
+    completion_tokens: int | None
+
+
 def sample_answers(question: str, n_samples: int = 10, temperature: float = 1.0) -> list[str]:
-    """Ask the same question n_samples times and return the raw text answers.
+    """Ask the same question n_samples times and return the raw text answers."""
+    return [s.text for s in sample_with_metadata(question, n_samples, temperature)]
+
+
+def sample_with_metadata(question: str, n_samples: int = 10, temperature: float = 1.0) -> list[Sample]:
+    """Like sample_answers, but each answer also carries its finish reason and token usage.
 
     Each request is retried once on failure. A sample that fails twice is logged
     and skipped, so the returned list may have fewer than n_samples entries.
@@ -25,7 +38,8 @@ def sample_answers(question: str, n_samples: int = 10, temperature: float = 1.0)
     for i in range(n_samples):
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                answers.append(chat(MODEL, SYSTEM_PROMPT, question, temperature))
+                result = chat(MODEL, SYSTEM_PROMPT, question, temperature)
+                answers.append(Sample(result.content.strip(), result.finish_reason, result.completion_tokens))
                 break
             except RateLimitExhausted:
                 raise

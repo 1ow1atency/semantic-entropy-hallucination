@@ -26,7 +26,7 @@ def judge_answer(question: str, gold_answers: list[str], answer: str) -> tuple[s
     """
     gold = "; ".join(gold_answers[:MAX_GOLD_IN_PROMPT])
     message = f"Question: {question}\nGold answers: {gold}\nCandidate answer: {answer}"
-    raw = chat(JUDGE_MODEL, JUDGE_SYSTEM_PROMPT, message, temperature=0.0)
+    raw = chat(JUDGE_MODEL, JUDGE_SYSTEM_PROMPT, message, temperature=0.0).content.strip()
     # Check longer labels first so "INCORRECT" isn't read as "CORRECT".
     found = set(re.findall(r"NOT_ATTEMPTED|INCORRECT|CORRECT", raw.upper()))
     if len(found) != 1:

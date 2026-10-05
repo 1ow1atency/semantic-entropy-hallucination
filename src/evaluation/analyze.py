@@ -35,19 +35,38 @@ TEXT_SECONDARY = "#52514e"
 GRID = "#e4e3df"
 
 
-def auroc_with_ci(incorrect: np.ndarray, scores: np.ndarray) -> tuple[float, float, float]:
-    """AUROC for predicting an incorrect answer, with a 95% percentile bootstrap CI over questions."""
-    if len(set(incorrect)) < 2:
-        return float("nan"), float("nan"), float("nan")
-    auroc = roc_auc_score(incorrect, scores)
+def bootstrap_aurocs(incorrect: np.ndarray, scores: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    """AUROC of every score on the same bootstrap resamples of questions (paired bootstrap).
+
+    Resamples containing only one class are skipped, since AUROC is undefined for them.
+    """
     rng = np.random.default_rng(BOOTSTRAP_SEED)
-    boot = []
+    boot = {key: [] for key in scores}
     for _ in range(N_BOOTSTRAP):
         idx = rng.integers(0, len(incorrect), len(incorrect))
-        if len(set(incorrect[idx])) == 2:  # AUROC is undefined for a one-class resample
-            boot.append(roc_auc_score(incorrect[idx], scores[idx]))
-    low, high = np.percentile(boot, [2.5, 97.5])
-    return auroc, low, high
+        if len(set(incorrect[idx])) < 2:
+            continue
+        for key, s in scores.items():
+            boot[key].append(roc_auc_score(incorrect[idx], s[idx]))
+    return {key: np.array(values) for key, values in boot.items()}
+
+
+def ci95(values: np.ndarray) -> tuple[float, float]:
+    low, high = np.percentile(values, [2.5, 97.5])
+    return float(low), float(high)
+
+
+def print_high_entropy_correct(records: list[dict], n: int = 10) -> None:
+    """Show correct answers with the highest semantic entropy, to check for clustering errors."""
+    top = sorted((r for r in records if r["judge_label"] == "CORRECT"),
+                 key=lambda r: r["semantic_entropy"], reverse=True)[:n]
+    print(f"\n=== {len(top)} correct answers with the highest semantic entropy ===")
+    for r in top:
+        print(f"\nQ: {r['question']}")
+        print(f"  gold: {r['gold_answers'][0]}   primary: {r['primary_answer']}")
+        print(f"  semantic entropy {r['semantic_entropy']:.3f}, {r['n_clusters']} clusters")
+        for cid, answer in sorted(zip(r["cluster_ids"], r["samples"]), key=lambda pair: pair[0]):
+            print(f"    [{cid}] {' '.join(answer.split())}")
 
 
 def selective_curve(correct: np.ndarray, scores: np.ndarray) -> list[tuple[float, float, float]]:
@@ -114,20 +133,36 @@ def main() -> None:
     print(f"Accuracy (judge): {accuracy:.1%} ({correct.sum()}/{len(correct)})")
     print(f"Accuracy (alias match, same questions): {alias_accuracy:.1%}")
 
-    auroc_rows = []
-    print(f"\n{'Score':<28} {'AUROC':>6}   95% CI")
-    for key, (name, get) in SCORES.items():
-        scores = np.array([get(r) for r in attempted], dtype=float)
-        auroc, low, high = auroc_with_ci(incorrect, scores)
-        auroc_rows.append({"score": key, "auroc": auroc, "ci_low": low, "ci_high": high})
-        print(f"{name:<28} {auroc:>6.3f}   [{low:.3f}, {high:.3f}]")
-    if not 0 < incorrect.sum() < len(incorrect):
-        print("AUROC is undefined: every analyzed answer has the same label.")
+    scores = {key: np.array([get(r) for r in attempted], dtype=float) for key, (_, get) in SCORES.items()}
+    auroc_rows, diff_rows = [], []
+    if 0 < incorrect.sum() < len(incorrect):
+        boot = bootstrap_aurocs(incorrect, scores)
+        n_used = len(boot["semantic_entropy"])
+        print(f"\n{'Score':<28} {'AUROC':>6}   95% CI   ({n_used} bootstrap resamples)")
+        for key, (name, _) in SCORES.items():
+            auroc = roc_auc_score(incorrect, scores[key])
+            low, high = ci95(boot[key])
+            auroc_rows.append({"score": key, "auroc": auroc, "ci_low": low, "ci_high": high})
+            print(f"{name:<28} {auroc:>6.3f}   [{low:.3f}, {high:.3f}]")
 
-    curves = {
-        key: selective_curve(correct, np.array([SCORES[key][1](r) for r in attempted], dtype=float))
-        for key in PLOTTED_SCORES
-    }
+        # Paired bootstrap: both scores are evaluated on the same resamples, so noise they share cancels.
+        print(f"\nAUROC difference, semantic entropy minus baseline (paired bootstrap)")
+        print(f"{'Baseline':<28} {'Observed':>8} {'Mean':>7}   95% CI")
+        for key, (name, _) in SCORES.items():
+            if key == "semantic_entropy":
+                continue
+            observed = roc_auc_score(incorrect, scores["semantic_entropy"]) - roc_auc_score(incorrect, scores[key])
+            diffs = boot["semantic_entropy"] - boot[key]
+            low, high = ci95(diffs)
+            diff_rows.append({"baseline": key, "observed_diff": observed, "mean_diff": float(diffs.mean()),
+                              "ci_low": low, "ci_high": high})
+            print(f"{name:<28} {observed:>+8.3f} {diffs.mean():>+7.3f}   [{low:+.3f}, {high:+.3f}]")
+    else:
+        print("\nAUROC is undefined: every analyzed answer has the same label.")
+
+    print_high_entropy_correct(attempted)
+
+    curves = {key: selective_curve(correct, scores[key]) for key in PLOTTED_SCORES}
 
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -140,13 +175,17 @@ def main() -> None:
         writer = csv.DictWriter(f, fieldnames=["score", "auroc", "ci_low", "ci_high"])
         writer.writeheader()
         writer.writerows(auroc_rows)
+    with (METRICS_DIR / "auroc_differences.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["baseline", "observed_diff", "mean_diff", "ci_low", "ci_high"])
+        writer.writeheader()
+        writer.writerows(diff_rows)
     with (METRICS_DIR / "selective_answering.csv").open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["score", "threshold", "coverage", "accuracy"])
         for key, curve in curves.items():
             writer.writerows([key, *point] for point in curve)
     plot_selective(curves, accuracy, len(attempted), PLOTS_DIR / "selective_answering.png")
-    print(f"\nWrote {METRICS_DIR}/summary.json, auroc.csv, selective_answering.csv "
+    print(f"\nWrote {METRICS_DIR}/summary.json, auroc.csv, auroc_differences.csv, selective_answering.csv "
           f"and {PLOTS_DIR}/selective_answering.png")
 
 

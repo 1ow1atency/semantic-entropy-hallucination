@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from groq import Groq, RateLimitError
@@ -15,6 +16,17 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 _client = None
+
+# Counters for reporting: every request sent to Groq, and how many of those got a 429.
+api_calls = 0
+rate_limited_calls = 0
+
+
+@dataclass
+class ChatResult:
+    content: str | None  # raw reply text; None or partial if the model stopped early
+    finish_reason: str | None  # "stop", or "length" if the token limit was hit
+    completion_tokens: int | None  # includes hidden reasoning tokens
 
 
 class RateLimitExhausted(Exception):
@@ -39,13 +51,15 @@ def _retry_after_seconds(error: RateLimitError) -> float:
         return DEFAULT_WAIT_SECONDS
 
 
-def chat(model: str, system_prompt: str, user_message: str, temperature: float) -> str:
-    """Send one chat request and return the stripped reply text.
+def chat(model: str, system_prompt: str, user_message: str, temperature: float) -> ChatResult:
+    """Send one chat request and return the raw reply with its finish reason and token usage.
 
     Reasoning models run with low, hidden reasoning so only the final answer comes back.
     On a 429, waits for the server's retry-after time and tries again.
     """
+    global api_calls, rate_limited_calls
     for _ in range(MAX_RATE_LIMIT_WAITS):
+        api_calls += 1
         try:
             response = _get_client().chat.completions.create(
                 model=model,
@@ -57,8 +71,15 @@ def chat(model: str, system_prompt: str, user_message: str, temperature: float) 
                 reasoning_effort="low",
                 reasoning_format="hidden",
             )
-            return response.choices[0].message.content.strip()
+            choice = response.choices[0]
+            usage = response.usage
+            return ChatResult(
+                content=choice.message.content,
+                finish_reason=choice.finish_reason,
+                completion_tokens=usage.completion_tokens if usage else None,
+            )
         except RateLimitError as e:
+            rate_limited_calls += 1
             wait = _retry_after_seconds(e)
             if wait > MAX_WAIT_SECONDS:
                 raise RateLimitExhausted(f"Groq asked to wait {wait:.0f}s ({e})") from e

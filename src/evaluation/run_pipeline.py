@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import random
+import time
 from pathlib import Path
 
 from src.clustering.entailment import cluster_answers
@@ -19,8 +20,9 @@ from src.entropy.semantic_entropy import (
 )
 from src.evaluation.data_loading import QAItem, load_triviaqa
 from src.evaluation.judge import alias_match, judge_answer
+from src import groq_chat
 from src.groq_chat import RateLimitExhausted
-from src.sampling.sampler import sample_answers
+from src.sampling.sampler import sample_with_metadata
 
 RESULTS_PATH = Path("results/metrics/pipeline_results.jsonl")
 N_SAMPLES = 10
@@ -40,15 +42,16 @@ def load_results(path: Path = RESULTS_PATH) -> list[dict]:
 
 def process_item(item: QAItem) -> dict | None:
     """Return the result record for one question, or None if it has to be skipped."""
-    samples = sample_answers(item.question, N_SAMPLES, SAMPLE_TEMPERATURE)
+    sampled = sample_with_metadata(item.question, N_SAMPLES, SAMPLE_TEMPERATURE)
+    samples = [s.text for s in sampled]
     if len(samples) < MIN_SAMPLES:
         logger.warning("Skipping %s: only %d of %d samples came back.", item.id, len(samples), N_SAMPLES)
         return None
-    primary = sample_answers(item.question, 1, 0.0)
+    primary = sample_with_metadata(item.question, 1, 0.0)
     if not primary:
         logger.warning("Skipping %s: the primary answer failed.", item.id)
         return None
-    primary_answer = primary[0]
+    primary_answer = primary[0].text
 
     cluster_ids = cluster_answers(item.question, samples)
     try:
@@ -64,7 +67,11 @@ def process_item(item: QAItem) -> dict | None:
         "question": item.question,
         "gold_answers": item.gold_answers,
         "primary_answer": primary_answer,
+        "primary_finish_reason": primary[0].finish_reason,
+        "primary_completion_tokens": primary[0].completion_tokens,
         "samples": samples,
+        "samples_finish_reason": [s.finish_reason for s in sampled],
+        "samples_completion_tokens": [s.completion_tokens for s in sampled],
         "cluster_ids": cluster_ids,
         "n_clusters": len(set(cluster_ids)),
         "semantic_entropy": semantic_entropy(cluster_ids),
@@ -106,6 +113,7 @@ def main() -> None:
     for noisy in ("httpx", "transformers"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
+    start = time.monotonic()
     items = load_triviaqa(args.n_questions, args.seed)
     done = {r["id"] for r in load_results()}
     todo = [item for item in items if item.id not in done]
@@ -125,6 +133,10 @@ def main() -> None:
 
     slice_ids = {item.id for item in items}
     print_review([r for r in load_results() if r["id"] in slice_ids], args.seed)
+
+    elapsed = time.monotonic() - start
+    print(f"\nElapsed: {elapsed / 60:.1f} min. API calls: {groq_chat.api_calls} "
+          f"({groq_chat.rate_limited_calls} rate-limited and retried).")
 
 
 if __name__ == "__main__":
