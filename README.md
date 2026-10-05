@@ -75,7 +75,7 @@ To check whether replies are being cut off by the token limit, run `.venv/bin/py
 
 | Score | AUROC | 95% CI |
 |---|---|---|
-| Semantic entropy | 0.862 | [0.808, 0.910] |
+| Semantic entropy | 0.861 | [0.807, 0.910] |
 | Naive entropy | 0.807 | [0.747, 0.864] |
 | Normalized-string entropy | 0.810 | [0.751, 0.868] |
 | 1 − agreement rate | 0.858 | [0.807, 0.907] |
@@ -84,9 +84,9 @@ To check whether replies are being cut off by the token limit, run `.venv/bin/py
 
 | Compared with | AUROC difference | 95% CI |
 |---|---|---|
-| Naive entropy | +0.055 | [+0.022, +0.088] |
-| Normalized-string entropy | +0.051 | [+0.020, +0.080] |
-| 1 − agreement rate | +0.003 | [-0.008, +0.016] |
+| Naive entropy | +0.055 | [+0.022, +0.087] |
+| Normalized-string entropy | +0.051 | [+0.020, +0.079] |
+| 1 − agreement rate | +0.003 | [-0.008, +0.015] |
 
 What this shows:
 
@@ -100,16 +100,16 @@ If the system refuses to answer the questions it is least sure about, accuracy o
 
 ![Selective answering curve](results/plots/selective_answering.png)
 
-Accuracy when answering only the lowest-semantic-entropy questions:
+Accuracy when answering only the questions with semantic entropy at or below a threshold. Each row is a coverage level the threshold can actually reach, the closest one at or below 25%, 50%, 75% and 100%:
 
-| Target coverage | Achievable coverage | Accuracy on answered questions | Accuracy answering everything |
-|---|---|---|---|
-| 25% | 23.7% (47 of 198) | 95.7% | 57.6% |
-| 50% | 50.0% (99 of 198) | 83.8% | 57.6% |
-| 75% | 74.7% (148 of 198) | 71.6% | 57.6% |
-| 100% | 100.0% (198 of 198) | 57.6% | 57.6% |
+| Coverage | Questions answered | Semantic entropy threshold | Accuracy on answered questions | Accuracy answering everything |
+|---|---|---|---|---|
+| 23.7% | 47 of 198 | 0.000 | 95.7% | 57.6% |
+| 50.0% | 99 of 198 | 1.089 | 83.8% | 57.6% |
+| 74.2% | 147 of 198 | 1.834 | 71.4% | 57.6% |
+| 100.0% | 198 of 198 | 2.303 | 57.6% | 57.6% |
 
-**Coverage can't be set freely.** 47 of the 198 questions tie at semantic entropy 0 (all 10 samples in one cluster), so the smallest possible coverage short of refusing everything is 23.7%. Above that, coverage moves in steps wherever several questions share an entropy value. The table uses the largest achievable coverage at or below each target.
+**Coverage can't be set freely.** 47 of the 198 questions tie at semantic entropy 0 (all 10 samples in one cluster), so the smallest possible coverage short of refusing everything is 23.7%. Above that, coverage moves in steps wherever several questions share an entropy value. Entropy scores are rounded to 9 decimals before analysis, so values that differ only by floating-point noise count as ties.
 
 ### Where high entropy comes from on correct answers
 

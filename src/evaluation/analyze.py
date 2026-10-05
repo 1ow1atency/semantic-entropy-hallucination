@@ -27,12 +27,27 @@ SCORES = {
 }
 PLOTTED_SCORES = ["semantic_entropy", "naive_entropy", "normalized_string_entropy"]
 
+# Entropies computed from the same cluster sizes can differ by ~1e-16 depending on summation
+# order. Rounding once, before any use, makes such ties count as ties everywhere.
+ENTROPY_KEYS = ("semantic_entropy", "naive_entropy", "normalized_string_entropy")
+ROUND_DECIMALS = 9
+
 # Reference palette: categorical slots 1-3, text and surface tokens (light mode).
 SERIES_COLORS = ["#2a78d6", "#eb6834", "#1baf7a"]
 SURFACE = "#fcfcfb"
 TEXT_PRIMARY = "#0b0b0b"
 TEXT_SECONDARY = "#52514e"
 GRID = "#e4e3df"
+
+
+def round_entropy_scores(records: list[dict]) -> list[dict]:
+    """Copies of the records with every entropy score rounded to ROUND_DECIMALS."""
+    return [{**r, **{key: round(r[key], ROUND_DECIMALS) for key in ENTROPY_KEYS}} for r in records]
+
+
+def score_arrays(records: list[dict]) -> dict[str, np.ndarray]:
+    """Each score as an array over the records; higher means "more likely incorrect"."""
+    return {key: np.array([get(r) for r in records], dtype=float) for key, (_, get) in SCORES.items()}
 
 
 def bootstrap_aurocs(incorrect: np.ndarray, scores: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -119,7 +134,7 @@ def plot_selective(curves: dict[str, list], overall_accuracy: float, n: int, pat
 
 
 def main() -> None:
-    records = load_results()
+    records = round_entropy_scores(load_results())
     if not records:
         raise SystemExit("No results found; run src.evaluation.run_pipeline first.")
     attempted = [r for r in records if r["judge_label"] != "NOT_ATTEMPTED"]
@@ -133,7 +148,7 @@ def main() -> None:
     print(f"Accuracy (judge): {accuracy:.1%} ({correct.sum()}/{len(correct)})")
     print(f"Accuracy (alias match, same questions): {alias_accuracy:.1%}")
 
-    scores = {key: np.array([get(r) for r in attempted], dtype=float) for key, (_, get) in SCORES.items()}
+    scores = score_arrays(attempted)
     auroc_rows, diff_rows = [], []
     if 0 < incorrect.sum() < len(incorrect):
         boot = bootstrap_aurocs(incorrect, scores)
