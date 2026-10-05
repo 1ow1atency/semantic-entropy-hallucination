@@ -3,8 +3,10 @@
 Uses the sampler's current model, prompt and settings, with no retry on "length". Probes the
 NOT_ATTEMPTED questions from the pipeline results plus the first other questions of the slice,
 and records every call (10 samples plus 1 primary answer per question) to its own JSONL file.
+A question counts as done only when all its calls succeeded; otherwise a rerun probes it again.
 """
 
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -66,16 +68,54 @@ def summarize(rows: list[dict]) -> None:
               f"{n_length}/{len(q_rows)} calls hit length")
 
 
+def load_probe_rows() -> list[dict]:
+    if not PROBE_PATH.exists():
+        return []
+    with PROBE_PATH.open() as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def completed_ids(rows: list[dict]) -> set[str]:
+    """Questions whose calls all succeeded; questions with any errored call are probed again."""
+    calls, failed = {}, set()
+    for r in rows:
+        calls[r["id"]] = calls.get(r["id"], 0) + 1
+        if r["error"] is not None:
+            failed.add(r["id"])
+    return {qid for qid, n in calls.items() if n == N_SAMPLES + 1 and qid not in failed}
+
+
+def save_question_rows(new_rows: list[dict]) -> None:
+    """Write one question's rows, replacing any rows left from an earlier attempt at it."""
+    qid = new_rows[0]["id"]
+    kept = [r for r in load_probe_rows() if r["id"] != qid]
+    tmp = PROBE_PATH.with_suffix(".jsonl.tmp")
+    with tmp.open("w") as f:
+        f.writelines(json.dumps(row) + "\n" for row in kept + new_rows)
+    tmp.replace(PROBE_PATH)
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ids", nargs="+", metavar="ID",
+                        help="probe only these question ids from the pipeline results")
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     records = load_results(RESULTS_PATH)
     not_attempted = [r for r in records if r["judge_label"] == "NOT_ATTEMPTED"]
     others = [r for r in records if r["judge_label"] != "NOT_ATTEMPTED"]
-    chosen = (not_attempted + others)[:N_QUESTIONS]
+    if args.ids:
+        by_id = {r["id"]: r for r in records}
+        missing = [qid for qid in args.ids if qid not in by_id]
+        if missing:
+            raise SystemExit(f"Not in {RESULTS_PATH}: {', '.join(missing)}")
+        chosen = [by_id[qid] for qid in args.ids]
+    else:
+        chosen = (not_attempted + others)[:N_QUESTIONS]
 
-    done = {json.loads(line)["id"] for line in PROBE_PATH.open()} if PROBE_PATH.exists() else set()
+    done = completed_ids(load_probe_rows())
     PROBE_PATH.parent.mkdir(parents=True, exist_ok=True)
     for i, record in enumerate(chosen, 1):
         if record["id"] in done:
@@ -87,11 +127,9 @@ def main() -> None:
         except RateLimitExhausted as e:
             logger.error("Stopping: %s. Rerun later to resume.", e)
             break
-        with PROBE_PATH.open("a") as f:
-            f.writelines(json.dumps(row) + "\n" for row in rows)
+        save_question_rows(rows)
 
-    with PROBE_PATH.open() as f:
-        summarize([json.loads(line) for line in f])
+    summarize(load_probe_rows())
 
 
 if __name__ == "__main__":

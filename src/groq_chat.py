@@ -11,6 +11,9 @@ from groq import Groq, RateLimitError
 MAX_RATE_LIMIT_WAITS = 10
 MAX_WAIT_SECONDS = 300  # longer waits usually mean a daily quota; stop instead of hanging
 DEFAULT_WAIT_SECONDS = 10.0
+# Set explicitly: without it Groq's default cut gpt-oss-20b off at 2048 tokens, which hidden
+# reasoning can use up before any answer text is written.
+MAX_COMPLETION_TOKENS = 4096
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,24 @@ class ChatResult:
     content: str | None  # raw reply text; None or partial if the model stopped early
     finish_reason: str | None  # "stop", or "length" if the token limit was hit
     completion_tokens: int | None  # includes hidden reasoning tokens
+
+
+class IncompleteResponse(Exception):
+    """Raised when a reply hit the token limit or came back with no text."""
+
+    def __init__(self, finish_reason: str | None, message: str):
+        super().__init__(message)
+        self.finish_reason = finish_reason
+
+
+def complete_text(result: ChatResult) -> str:
+    """Return the stripped reply text, or raise IncompleteResponse if it is cut off or empty."""
+    if result.finish_reason == "length":
+        raise IncompleteResponse("length", f"hit the token limit after {result.completion_tokens} tokens")
+    text = (result.content or "").strip()
+    if not text:
+        raise IncompleteResponse(result.finish_reason, "empty reply")
+    return text
 
 
 class RateLimitExhausted(Exception):
@@ -68,6 +89,7 @@ def chat(model: str, system_prompt: str, user_message: str, temperature: float) 
                     {"role": "user", "content": user_message},
                 ],
                 temperature=temperature,
+                max_completion_tokens=MAX_COMPLETION_TOKENS,
                 reasoning_effort="low",
                 reasoning_format="hidden",
             )

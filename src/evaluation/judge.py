@@ -3,11 +3,12 @@
 import re
 
 from src.entropy.semantic_entropy import normalize_answer
-from src.groq_chat import chat
+from src.groq_chat import RateLimitExhausted, chat, complete_text
 
 JUDGE_MODEL = "openai/gpt-oss-120b"
 LABELS = ("CORRECT", "INCORRECT", "NOT_ATTEMPTED")
 MAX_GOLD_IN_PROMPT = 20  # some TriviaQA items have dozens of aliases
+MAX_ATTEMPTS = 2  # one initial try plus one retry
 
 JUDGE_SYSTEM_PROMPT = (
     "You grade answers to trivia questions. You are given a question, a list of acceptable "
@@ -22,16 +23,24 @@ JUDGE_SYSTEM_PROMPT = (
 def judge_answer(question: str, gold_answers: list[str], answer: str) -> tuple[str, str]:
     """Return (label, raw_reply) where label is one of LABELS.
 
-    Raises ValueError if the reply doesn't contain exactly one label.
+    A failed call (including a cut-off or empty reply, or one without exactly one label)
+    is retried once; the second failure is raised.
     """
     gold = "; ".join(gold_answers[:MAX_GOLD_IN_PROMPT])
     message = f"Question: {question}\nGold answers: {gold}\nCandidate answer: {answer}"
-    raw = chat(JUDGE_MODEL, JUDGE_SYSTEM_PROMPT, message, temperature=0.0).content.strip()
-    # Check longer labels first so "INCORRECT" isn't read as "CORRECT".
-    found = set(re.findall(r"NOT_ATTEMPTED|INCORRECT|CORRECT", raw.upper()))
-    if len(found) != 1:
-        raise ValueError(f"Judge reply has no single label: {raw!r}")
-    return found.pop(), raw
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            raw = complete_text(chat(JUDGE_MODEL, JUDGE_SYSTEM_PROMPT, message, temperature=0.0))
+            # Check longer labels first so "INCORRECT" isn't read as "CORRECT".
+            found = set(re.findall(r"NOT_ATTEMPTED|INCORRECT|CORRECT", raw.upper()))
+            if len(found) != 1:
+                raise ValueError(f"Judge reply has no single label: {raw!r}")
+            return found.pop(), raw
+        except RateLimitExhausted:
+            raise
+        except Exception:
+            if attempt == MAX_ATTEMPTS:
+                raise
 
 
 def alias_match(gold_answers: list[str], answer: str) -> bool:
