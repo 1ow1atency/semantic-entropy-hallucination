@@ -113,7 +113,7 @@ Accuracy when answering only the questions with semantic entropy at or below a t
 
 ### Where high entropy comes from on correct answers
 
-By inspection of 10 examples (the 10 correct answers with the highest semantic entropy), 6 were mainly **clustering splits**, where answers meaning the same thing landed in different clusters, and 4 were **real disagreement**, where the samples gave genuinely different answers. None was mainly a wrong merge, but 2 contained one. The examples, with each question's samples, cluster ids and classification, are in [results/metrics/high_entropy_correct_review.md](results/metrics/high_entropy_correct_review.md).
+By inspection of 10 examples (the 10 correct answers with the highest semantic entropy), 6 were mainly **clustering splits**, where answers meaning the same thing landed in different clusters, and 4 were **real disagreement**, where the samples gave genuinely different answers. None was mainly a wrong merge, but 2 contained one. The 10th and 11th examples tie at semantic entropy 1.834, so the cut-off at 10 falls inside a tie; the review file also lists the 11th with its own classification, outside these counts. The examples, with each question's samples, cluster ids and classification, are in [results/metrics/high_entropy_correct_review.md](results/metrics/high_entropy_correct_review.md).
 
 ## Limitations
 

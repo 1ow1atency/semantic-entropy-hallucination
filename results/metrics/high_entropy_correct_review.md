@@ -4,6 +4,8 @@ The 10 questions whose temperature-0 answer the judge graded CORRECT but whose 1
 
 Main cause: clustering split 6, real disagreement 4. No example has a wrong merge as its main cause; wrong merges appear as a secondary issue in 2 (qz_4151, qb_3466).
 
+The 10th and 11th examples tie at semantic entropy 1.834, so the cut-off at 10 falls inside a tie. The 11th is listed at the end with its own classification, but it is not included in the counts above.
+
 ## 1. In La Cage Aux Folles, what was La Cage Aux Folles?
 
 - **id:** `tc_1968`
@@ -213,3 +215,24 @@ Main cause: clustering split 6, real disagreement 4. No example has a wrong merg
 | 4 | The third molars are the wisdom teeth (the lower second molars and the upper second molars), which are the last teeth to erupt. |
 | 5 | The third molars are the wisdom teeth, also called the fourth molars, and they are the last teeth to erupt. |
 | 6 | The third molars are the wisdom teeth – the four teeth in the corners of the mouth (the lower right, lower left, upper right and upper left) commonly numbered 48, 38, 33, 32. They are the last teeth to erupt. |
+
+## 11 (tied with 10, not counted). Which tennis player was known as the Rockhampton Rocket?
+
+- **id:** `qb_1009`
+- **Gold answer:** Rod Laver
+- **Primary answer (graded CORRECT):** Rod Laver.
+- **Semantic entropy:** 1.834 (7 clusters)
+- **Classification:** real disagreement. Samples name Rod Laver, Ken McGregor, John Newcombe and others; John Newcombe is also split across 2 clusters.
+
+| Cluster | Sampled answer |
+|---|---|
+| 0 | Rod Laver. |
+| 0 | Rod Laver. |
+| 1 | Norman “Rocky” Latham. |
+| 2 | Ken McGregor. |
+| 2 | Ken McGregor. |
+| 2 | Ken McGregor. |
+| 3 | Arthur “Rock” G. McPherson. |
+| 4 | The nickname “Rockhampton Rocket” belonged to Australian tennis star John Newcombe. |
+| 5 | John Newcombe. |
+| 6 | John Carver. |
